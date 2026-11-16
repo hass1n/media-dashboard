@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+
+{% block title %}Website Performance - Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<a href="/">Dashboard</a> &raquo; <span class="text-white">Website Analytics</span>
+{% endblock %}
+
+{% block page_title %}Website Performance Analytics{% endblock %}
+{% block page_subtitle %}Deep dive into website views, duration, and user behavior{% endblock %}
+
+{% block filter_method %}POST{% endblock %}
+{% block filter_action %}/media{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No Website Data</h4>
+    <p>No website traffic records found in the selected date range.</p>
+    <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Home</a>
+</div>
+{% else %}
+<div class="row g-2">
+    <div class="col-12">
+        <div class="chart-card p-1">
+            {{ charts.summary | safe }}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

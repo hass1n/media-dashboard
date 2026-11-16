@@ -1,0 +1,131 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ author }} Analysis - Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<a href="/">Dashboard</a> &raquo; <span class="text-white">Author Analysis</span>
+{% endblock %}
+
+{% block page_title %}Analysis for Author: <span class="text-warning">{{ author }}</span>{% endblock %}
+{% block page_subtitle %}Programs, outputs, and output types for this author{% endblock %}
+
+{% block filter_method %}GET{% endblock %}
+{% block filter_action %}/author/{{ author }}{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No Author Data</h4>
+    <p>No records found for author: <strong>{{ author }}</strong> in the selected date range.</p>
+    <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Home</a>
+</div>
+{% else %}
+<div class="author-header d-flex align-items-center mb-4">
+    {% if author_photo %}
+    <img src="{{ url_for('author_image', filename=author_photo) }}" alt="Photo of {{ author }}" class="author-avatar">
+    {% endif %}
+    <div>
+        <h2 class="h4 mb-1">Analysis for Author: <span class="text-warning">{{ author }}</span></h2>
+        <p class="mb-0 text-muted">Programs, outputs, and output types for this author</p>
+    </div>
+</div>
+<div class="row g-3 author-charts">
+    <!-- Programs Chart -->
+    <div class="col-12 col-xl-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.programs | safe }}
+        </div>
+    </div>
+
+    <!-- Combined reach, engagement, and website metrics -->
+    <div class="col-12 col-xl-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.performance | safe }}
+        </div>
+    </div>
+
+    <!-- Media Outputs Chart -->
+    <div class="col-12 col-xl-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div><small class="fw-bold">Media Outputs</small></div>
+                {% if media_show_more %}
+                <button type="button" id="toggleMediaOutputsBtn" class="btn btn-sm btn-primary py-0 px-2" style="font-size: 11px;">View More</button>
+                {% endif %}
+            </div>
+            <div id="media-preview" style="overflow:auto; width: 100%; flex-grow: 1;">
+                {{ charts.media_preview | safe }}
+            </div>
+            {% if media_show_more %}
+            <div id="media-full" class="d-none" style="overflow:auto; width: 100%; flex-grow: 1; margin-top:0.5rem;">
+                {{ charts.media_all | safe }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Output Types Chart -->
+    <div class="col-12 col-xl-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.outputs | safe }}
+        </div>
+    </div>
+
+    <!-- Category Presence -->
+    <div class="col-12">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div><small class="fw-bold">Categories</small></div>
+                {% if category_show_more %}
+                <button type="button" id="toggleAuthorCategoriesBtn" class="btn btn-sm btn-primary py-0 px-2" style="font-size: 11px;">View More</button>
+                {% endif %}
+            </div>
+            <div id="category-preview">
+                {{ charts.categories_preview | safe }}
+            </div>
+            {% if category_show_more %}
+            <div id="category-full" class="d-none">
+                {{ charts.categories_all | safe }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const fullWrapper = document.getElementById('media-full');
+        const toggleBtn = document.getElementById('toggleMediaOutputsBtn');
+        if (!toggleBtn || !fullWrapper) return;
+
+        toggleBtn.addEventListener('click', function() {
+            if (fullWrapper.classList.contains('d-none')) {
+                fullWrapper.classList.remove('d-none');
+                toggleBtn.textContent = 'Show Less';
+                fullWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                fullWrapper.classList.add('d-none');
+                toggleBtn.textContent = 'View More';
+            }
+        });
+
+        const categoriesPreview = document.getElementById('category-preview');
+        const categoriesFull = document.getElementById('category-full');
+        const categoriesToggle = document.getElementById('toggleAuthorCategoriesBtn');
+        if (categoriesPreview && categoriesFull && categoriesToggle) {
+            categoriesToggle.addEventListener('click', function() {
+                const showingAll = categoriesFull.classList.contains('d-none');
+                categoriesPreview.classList.toggle('d-none', showingAll);
+                categoriesFull.classList.toggle('d-none', !showingAll);
+                categoriesToggle.textContent = showingAll ? 'Show Top 10' : 'View More';
+                if (showingAll) {
+                    categoriesFull.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

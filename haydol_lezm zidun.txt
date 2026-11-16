@@ -1,0 +1,6 @@
+
+now i want to add a new page like the programs and categories , but for authors to show each author how many interview he did in each program and another chart that shows each author how many interview he did with each media output and to another one to show each author how many output type he did also please make it based on the data we have
+
+click on media output and show the author that did the interviews with this platform
+
+if i click on program it redirect me to the program page 

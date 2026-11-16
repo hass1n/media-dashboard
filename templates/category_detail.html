@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ category }} Analysis - Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<a href="/">Dashboard</a> &raquo; <span class="text-white">Category Analysis</span>
+{% endblock %}
+
+{% block page_title %}Analysis for Category: <span class="text-warning">{{ category }}</span>{% endblock %}
+{% block page_subtitle %}In-depth performance metrics for all outputs in this category{% endblock %}
+
+{% block filter_method %}GET{% endblock %}
+{% block filter_action %}/category/{{ category }}{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No Category Data</h4>
+    <p>No records found for category: <strong>{{ category }}</strong> in the selected date range.</p>
+    <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Home</a>
+</div>
+{% else %}
+<div class="row g-2">
+    <!-- Author Presence -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.authors | safe }}
+        </div>
+    </div>
+
+    <!-- Media Output -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.media | safe }}
+        </div>
+    </div>
+
+    <!-- Combined reach, engagement, and website metrics -->
+    <div class="col-12">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.performance | safe }}
+        </div>
+    </div>
+
+</div>
+{% endif %}
+{% endblock %}

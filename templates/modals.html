@@ -1,0 +1,178 @@
+<!-- Program Selection Modal -->
+<div class="modal fade" id="programModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Select a Program</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="programSearch" placeholder="Search programs...">
+                </div>
+                <div id="programList" style="max-height: 400px; overflow-y: auto;" class="list-group list-group-flush">
+                    <p class="text-muted p-3">Loading programs...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Social Platform Selection Modal -->
+<div class="modal fade" id="socialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Select a Social Platform</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group list-group-flush">
+                    <a href="#" onclick="navigateToSocial('Facebook')" class="list-group-item list-group-item-action py-3">📘 Facebook</a>
+                    <a href="#" onclick="navigateToSocial('YouTube')" class="list-group-item list-group-item-action py-3">🎥 YouTube</a>
+                    <a href="#" onclick="navigateToSocial('Instagram')" class="list-group-item list-group-item-action py-3">📸 Instagram</a>
+                    <a href="#" onclick="navigateToSocial('Twitter')" class="list-group-item list-group-item-action py-3">🐦 Twitter</a>
+                    <a href="#" onclick="navigateToSocial('TikTok')" class="list-group-item list-group-item-action py-3">🎵 TikTok</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Category Selection Modal -->
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" style="border-radius: 15px;">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Select a Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="categorySearch" placeholder="Search categories...">
+                </div>
+                <div id="categoryList" style="max-height: 400px; overflow-y: auto;" class="list-group list-group-flush">
+                    <p class="text-muted p-3">Loading categories...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const programModal = document.getElementById('programModal');
+        const categoryModal = document.getElementById('categoryModal');
+        const authorModal = document.getElementById('authorModal');
+
+        if (programModal) {
+            programModal.addEventListener('show.bs.modal', function () {
+                fetch('/programs')
+                    .then(response => response.json())
+                    .then(data => {
+                        const programList = document.getElementById('programList');
+                        const startDate = document.getElementById('start_date')?.value || '';
+                        const endDate = document.getElementById('end_date')?.value || '';
+
+                        let html = '';
+                        (data.programs || []).forEach(program => {
+                            html += `<a href="/program/${encodeURIComponent(program)}?start_date=${startDate}&end_date=${endDate}" class="list-group-item list-group-item-action py-2">${program}</a>`;
+                        });
+                        programList.innerHTML = html || '<p class="text-muted p-3">No programs found.</p>';
+
+                        document.getElementById('programSearch')?.addEventListener('keyup', function () {
+                            const searchTerm = this.value.toLowerCase();
+                            const items = programList.querySelectorAll('.list-group-item');
+                            items.forEach(item => {
+                                item.style.display = item.textContent.toLowerCase().includes(searchTerm) ? 'block' : 'none';
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        document.getElementById('programList').innerHTML = '<p class="text-danger p-3">Unable to load programs.</p>';
+                        console.error('Program list fetch failed:', error);
+                    });
+            });
+        }
+
+        if (categoryModal) {
+            categoryModal.addEventListener('show.bs.modal', function () {
+                fetch('/categories')
+                    .then(response => response.json())
+                    .then(data => {
+                        const categoryList = document.getElementById('categoryList');
+                        const startDate = document.getElementById('start_date')?.value || '';
+                        const endDate = document.getElementById('end_date')?.value || '';
+
+                        let html = '';
+                        (data.categories || []).forEach(category => {
+                            html += `<a href="/category/${encodeURIComponent(category)}?start_date=${startDate}&end_date=${endDate}" class="list-group-item list-group-item-action py-2">${category}</a>`;
+                        });
+                        categoryList.innerHTML = html || '<p class="text-muted p-3">No categories found.</p>';
+
+                        document.getElementById('categorySearch')?.addEventListener('keyup', function () {
+                            const searchTerm = this.value.toLowerCase();
+                            const items = categoryList.querySelectorAll('.list-group-item');
+                            items.forEach(item => {
+                                item.style.display = item.textContent.toLowerCase().includes(searchTerm) ? 'block' : 'none';
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        document.getElementById('categoryList').innerHTML = '<p class="text-danger p-3">Unable to load categories.</p>';
+                        console.error('Category list fetch failed:', error);
+                    });
+            });
+        }
+
+        if (authorModal) {
+            authorModal.addEventListener('show.bs.modal', function () {
+                fetch('/authors')
+                    .then(response => response.json())
+                    .then(data => {
+                        const authorList = document.getElementById('authorList');
+                        const startDate = document.getElementById('start_date')?.value || '';
+                        const endDate = document.getElementById('end_date')?.value || '';
+
+                        let html = '';
+                        (data.authors || []).forEach(author => {
+                            html += `<a href="/author/${encodeURIComponent(author)}?start_date=${startDate}&end_date=${endDate}" class="list-group-item list-group-item-action py-2">${author}</a>`;
+                        });
+                        authorList.innerHTML = html || '<p class="text-muted p-3">No authors found.</p>';
+
+                        document.getElementById('authorSearch')?.addEventListener('keyup', function () {
+                            const searchTerm = this.value.toLowerCase();
+                            const items = authorList.querySelectorAll('.list-group-item');
+                            items.forEach(item => {
+                                item.style.display = item.textContent.toLowerCase().includes(searchTerm) ? 'block' : 'none';
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        document.getElementById('authorList').innerHTML = '<p class="text-danger p-3">Unable to load authors.</p>';
+                        console.error('Author list fetch failed:', error);
+                    });
+            });
+        }
+    });
+</script>
+
+    <!-- Author Modal HTML -->
+    <div class="modal fade" id="authorModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="border-radius: 15px;">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Select an Author</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="authorSearch" placeholder="Search authors...">
+                    </div>
+                    <div id="authorList" style="max-height: 400px; overflow-y: auto;" class="list-group list-group-flush">
+                        <p class="text-muted p-3">Loading authors...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

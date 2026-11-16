@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+
+{% block title %}Data Preview - Dashboard{% endblock %}
+
+{% block head %}
+<style>
+    .table-responsive {
+        max-height: 800px;
+        overflow-y: auto;
+        border-radius: var(--radius-md);
+    }
+    th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa !important;
+        z-index: 1;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    td {
+        font-size: 0.85rem;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<a href="/">Dashboard</a> &raquo; <span class="text-white">Data Preview</span>
+{% endblock %}
+
+{% block page_title %}Raw Data Preview{% endblock %}
+{% block page_subtitle %}Explore the underlying database records in detail{% endblock %}
+
+{% block content %}
+<div class="chart-card">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 fw-bold">Database Sample (Top 500)</h5>
+        <span class="badge bg-primary">SQLite Records</span>
+    </div>
+    <div class="table-responsive">
+        {{ table_html | safe }}
+    </div>
+</div>
+{% endblock %}

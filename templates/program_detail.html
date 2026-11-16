@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ program }} Analysis - Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<a href="/">Dashboard</a> &raquo; <span class="text-white">Program Analysis</span>
+{% endblock %}
+
+{% block page_title %}Analysis for Program: <span class="text-warning">{{ program }}</span>{% endblock %}
+{% block page_subtitle %}Detailed metrics, reach, and authorship for this specific program{% endblock %}
+
+{% block filter_method %}GET{% endblock %}
+{% block filter_action %}/program/{{ program }}{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No Program Data</h4>
+    <p>No records found for program: <strong>{{ program }}</strong> in the selected date range.</p>
+    <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Home</a>
+</div>
+{% else %}
+<div class="row g-2">
+    <!-- Smaller charts -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.platform_posts | safe }}
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.media | safe }}
+        </div>
+    </div>
+
+    <!-- Combined reach, engagement, and website metrics -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.performance | safe }}
+        </div>
+    </div>
+
+    <!-- Author Presence -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.authors | safe }}
+        </div>
+    </div>
+
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ page_title }} - Dashboard{% endblock %}
+
+{% block filter_method %}GET{% endblock %}
+{% block filter_action %}/{{ request.path.strip('/') }}{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No {{ page_title }} Data</h4>
+    <p>No records were found for the selected date range.</p>
+</div>
+{% else %}
+<div class="chart-card p-1">
+    {% if focus_chart == 'authors' %}
+        {{ charts.authors | safe }}
+    {% elif focus_chart == 'interviews' %}
+        {{ charts.programs | safe }}
+        {{ charts.outputs | safe }}
+    {% else %}
+        {{ charts.performance | safe }}
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

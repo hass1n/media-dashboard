@@ -1,0 +1,309 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ page_title or 'Media Analytics Dashboard - Home' }}{% endblock %}
+
+{% block content %}
+{% if no_data %}
+<div class="alert alert-warning text-center">
+    <h4 class="alert-heading">No Data Found</h4>
+    <p>No records were found for the selected date range: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong>.</p>
+    <hr>
+    <p class="mb-0">Please try adjusting your filters in the sidebar.</p>
+</div>
+{% else %}
+<div class="row g-2">
+
+    <!-- Slot 1: Programs -->
+    <div class="{% if page_title == 'Other Outputs' %}col-md-6{% else %}col-md-4{% endif %}">
+        <div class="chart-card p-1 h-100 d-flex flex-column{% if page_title == 'Other Outputs' %} other-output-chart{% endif %}" id="programs-chart">
+            {{ charts.programs | safe }}
+        </div>
+    </div>
+
+    <!-- Slot 2: Output Type -->
+    <div class="{% if page_title == 'Other Outputs' %}col-md-6{% else %}col-md-4{% endif %}">
+        <div class="chart-card p-1 h-100 d-flex flex-column{% if page_title == 'Other Outputs' %} other-output-chart{% endif %}">
+            {{ charts.outputs | safe }}
+        </div>
+    </div>
+
+    {% if show_channel_chart|default(true) %}
+    <!-- Slot 3: Media Channel -->
+    <div class="col-md-4">
+        <div class="chart-card p-1 h-100 d-flex flex-column" id="outlet-chart">
+            <div class="d-flex justify-content-between align-items-center channel-chart-toolbar">
+                {% if charts.outlet_show_more %}
+                <button type="button" id="toggleChannelBtn" class="btn btn-sm btn-channel-more">Show More</button>
+                {% endif %}
+            </div>
+            <div id="channel-preview" class="chart-expand-area">
+                {{ charts.outlets_preview | safe }}
+            </div>
+            {% if charts.outlet_show_more %}
+            <div id="channel-full" class="chart-expand-area d-none">
+                {{ charts.outlets_all | safe }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if include_engagement_charts %}
+    <!-- Combined performance chart -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column">
+            {{ charts.performance | safe }}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Authors chart beside reach/performance -->
+    <div class="col-md-6">
+        <div class="chart-card p-1 h-100 d-flex flex-column" id="authors-chart">
+            {{ charts.authors | safe }}
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function logToDebugPanel(message, isError, extra = null) {
+        if (isError) {
+            console.error('[Chart Debug]', message, extra || '');
+        } else {
+            console.log('[Chart Debug]', message, extra || '');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        logToDebugPanel('Page loaded, script running...');
+        const previewWrapper = document.getElementById('output-preview');
+        const fullWrapper = document.getElementById('output-full');
+        const toggleBtn = document.getElementById('toggleOutputsBtn');
+        
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', toggleOutputs);
+        }
+
+        const channelPreview = document.getElementById('channel-preview');
+        const channelFull = document.getElementById('channel-full');
+        const channelToggle = document.getElementById('toggleChannelBtn');
+        if (channelToggle && channelPreview && channelFull) {
+            channelToggle.addEventListener('click', function() {
+                const showingFull = channelFull.classList.toggle('d-none') === false;
+                channelPreview.classList.toggle('d-none', showingFull);
+                channelToggle.textContent = showingFull ? 'Show Less' : 'Show More';
+                setTimeout(() => resizePlotlyChart(showingFull ? channelFull : channelPreview), 50);
+            });
+        }
+
+        function resizePlotlyChart(wrapper) {
+            if (!wrapper) return;
+            const plotDiv = wrapper.querySelector('div.js-plotly-plot') || 
+                             wrapper.querySelector('.plotly-graph-div') || 
+                             (wrapper.classList.contains('js-plotly-plot') ? wrapper : null);
+            if (plotDiv && typeof Plotly !== 'undefined') {
+                Plotly.relayout(plotDiv, { autosize: true });
+            }
+        }
+
+        function toggleOutputs() {
+            if (!fullWrapper || !previewWrapper) return;
+
+            if (fullWrapper.classList.contains('d-none')) {
+                fullWrapper.classList.remove('d-none');
+                if (toggleBtn) toggleBtn.textContent = 'Show Less';
+                setTimeout(() => { resizePlotlyChart(fullWrapper); }, 50);
+                fullWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                fullWrapper.classList.add('d-none');
+                if (toggleBtn) toggleBtn.textContent = 'View More';
+                setTimeout(() => { resizePlotlyChart(previewWrapper); }, 50);
+                previewWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function extractPlotlyLabel(point) {
+            if (!point) return null;
+
+            // 1. Check customdata first
+            if (point.customdata !== undefined && point.customdata !== null) {
+                let val = point.customdata;
+                while (Array.isArray(val) && val.length > 0) {
+                    val = val[0];
+                }
+                if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    return String(val).trim();
+                }
+            }
+
+            // 2. Check categorical string axis values
+            if (typeof point.y === 'string' && point.y.trim() !== '' && isNaN(point.y)) return point.y.trim();
+            if (typeof point.x === 'string' && point.x.trim() !== '' && isNaN(point.x)) return point.x.trim();
+
+            // 3. Fallback to point label, text, or trace name
+            if (point.label !== undefined && point.label !== null && String(point.label).trim() !== '') {
+                return String(point.label).trim();
+            }
+            if (point.text !== undefined && point.text !== null && String(point.text).trim() !== '' && isNaN(point.text)) {
+                return String(point.text).trim();
+            }
+            if (point.data && point.data.name && isNaN(point.data.name)) {
+                return String(point.data.name).trim();
+            }
+            
+            // 4. Raw axis values fallback
+            if (point.x !== undefined && point.x !== null) return String(point.x).trim();
+            if (point.y !== undefined && point.y !== null) return String(point.y).trim();
+
+            return null;
+        }
+
+        function bindPlotlyClick(wrapperId, getUrlFn) {
+            const wrapper = document.getElementById(wrapperId);
+            if (!wrapper) {
+                logToDebugPanel(`✗ wrapper "#${wrapperId}" not found on page`, true);
+                return;
+            }
+
+            let attempts = 0;
+            const interval = setInterval(() => {
+                const plotDiv = wrapper.querySelector('.js-plotly-plot') || 
+                                 wrapper.querySelector('.plotly-graph-div') || 
+                                 (wrapper.classList.contains('js-plotly-plot') ? wrapper : null);
+                
+                if (plotDiv && typeof plotDiv.on === 'function') {
+                    clearInterval(interval);
+                    logToDebugPanel(`✓ Successfully bound click handler to "#${wrapperId}"`);
+                    
+                    // Unbind previous event handlers if re-bound
+                    if (typeof plotDiv.removeAllListeners === 'function') {
+                        plotDiv.removeAllListeners('plotly_hover');
+                        plotDiv.removeAllListeners('plotly_unhover');
+                        plotDiv.removeAllListeners('plotly_click');
+                    }
+
+                    plotDiv.on('plotly_hover', function(data) {
+                        if (data && data.points && data.points.length > 0) {
+                            plotDiv.style.cursor = 'pointer';
+                        }
+                    });
+
+                    plotDiv.on('plotly_unhover', function() {
+                        plotDiv.style.cursor = '';
+                    });
+
+                    plotDiv.on('plotly_click', function(data) {
+                        try {
+                            const point = data && data.points && data.points[0];
+                            if (!point) return;
+
+                            const label = extractPlotlyLabel(point);
+
+                            if (!label) {
+                                logToDebugPanel('Could not extract label from clicked point:', true, point);
+                                return;
+                            }
+
+                            const startEl = document.getElementById('start_date');
+                            const endEl = document.getElementById('end_date');
+                            const startDate = startEl ? (startEl.value || '') : '';
+                            const endDate = endEl ? (endEl.value || '') : '';
+
+                            const url = getUrlFn(label, startDate, endDate);
+                            if (url && url !== '#') {
+                                logToDebugPanel(`Navigating to: ${url}`);
+                                window.location.href = url;
+                            }
+                        } catch (err) {
+                            logToDebugPanel('Error handling click:', true, err);
+                        }
+                    });
+                }
+                
+                attempts++;
+                if (attempts > 150) {
+                    clearInterval(interval);
+                    logToDebugPanel(`Gave up waiting for Plotly chart inside "#${wrapperId}"`, true);
+                }
+            }, 100);
+        }
+
+        function buildUrl(path, label, sd, ed) {
+            if (!label) return '#';
+            let url = `${path}/${encodeURIComponent(label)}`;
+            const params = new URLSearchParams();
+            if (sd) params.append('start_date', sd);
+            if (ed) params.append('end_date', ed);
+            
+            const queryString = params.toString();
+            return queryString ? `${url}?${queryString}` : url;
+        }
+
+        // Helper for Media Output clicks
+        function buildOutputAuthorsUrl(path, label, sd, ed) {
+            if (!label) return '#';
+            let url = `${path}/${encodeURIComponent(label)}`;
+            const params = new URLSearchParams();
+            params.append('output', label);
+            if (sd) params.append('start_date', sd);
+            if (ed) params.append('end_date', ed);
+            
+            return `${url}?${params.toString()}`;
+        }
+
+        // Helper for Output Type clicks
+        function buildOutputTypeUrl(path, label, sd, ed) {
+            if (!label) return '#';
+            let url = `${path}/${encodeURIComponent(label)}`;
+            const params = new URLSearchParams();
+            params.append('type', label);
+            if (sd) params.append('start_date', sd);
+            if (ed) params.append('end_date', ed);
+            
+            return `${url}?${params.toString()}`;
+        }
+
+        // ==========================================
+        // 🔗 CHART CLICK BINDINGS
+        // ==========================================
+        
+        // Media Output -> /output/<MediaName>?output=<MediaName>&start_date=...&end_date=...
+        bindPlotlyClick('output-preview', (label, sd, ed) => buildOutputAuthorsUrl('/output', label, sd, ed));
+        bindPlotlyClick('output-full', (label, sd, ed) => buildOutputAuthorsUrl('/output', label, sd, ed));
+
+        // Output Type -> /output-type/<TypeName>?type=<TypeName>&start_date=...&end_date=...
+        // (Verify that 'output-type-chart' matches the ID of your HTML element for Output Type)
+        bindPlotlyClick('output-type-chart', (label, sd, ed) => buildOutputTypeUrl('/output-type', label, sd, ed));
+        
+        // Program Chart -> /program/<ProgramName>
+        bindPlotlyClick('programs-chart', (label, sd, ed) => buildUrl('/program', label, sd, ed));
+
+        // Media Channel Chart -> /output/<MediaName>
+        bindPlotlyClick('outlet-chart', (label, sd, ed) => buildOutputAuthorsUrl('/output', label, sd, ed));
+        
+        // Author Chart -> /author/<AuthorName>
+        bindPlotlyClick('authors-chart', (label, sd, ed) => buildUrl('/author', label, sd, ed));
+
+        // Force recalculate layout on load & handle resize events
+        document.querySelectorAll('.chart-card').forEach(card => {
+            setTimeout(() => { resizePlotlyChart(card); }, 150);
+        });
+
+        // Optional ResizeObserver for adaptive container resizing
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    resizePlotlyChart(entry.target);
+                }
+            });
+            document.querySelectorAll('.chart-card').forEach(card => {
+                resizeObserver.observe(card);
+            });
+        }
+    });
+</script>
+{% endblock %}

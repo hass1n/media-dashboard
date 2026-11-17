@@ -37,15 +37,32 @@ import sqlalchemy
 from sqlalchemy import create_engine
 import warnings
 
-# Database Credentials
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "media_db_4"
-DB_USER = "postgres"
-DB_PASS = "1234" # Using the verified working password from app.py
+def _load_env_file(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')):
+    """Load KEY=VALUE lines from .env into os.environ (existing env vars win)."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
-# Create SQLAlchemy engine
-engine = create_engine(f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+_load_env_file()
+
+# Database Credentials (set in .env, see .env.example)
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = os.environ.get("DB_PORT", "5432")
+DB_NAME = os.environ.get("DB_NAME", "media_db_4")
+DB_USER = os.environ.get("DB_USER", "postgres")
+DB_PASS = os.environ.get("DB_PASS", "")
+
+# Create SQLAlchemy engine (URL.create escapes special characters in the password)
+engine = create_engine(sqlalchemy.engine.URL.create(
+    "postgresql", username=DB_USER, password=DB_PASS,
+    host=DB_HOST, port=int(DB_PORT), database=DB_NAME,
+))
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
@@ -204,7 +221,7 @@ def add_author_images_to_bar_chart(fig, auth_counts, image_size_fraction=0.5):
 
 
 def get_db_connection():
-    conn = psycopg2.connect(host='localhost', dbname='media_db_4', user='postgres', password='1234')
+    conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
     return conn
 
 @app.template_filter('intcomma')
@@ -450,6 +467,9 @@ def get_unified_media_df(start_date, end_date):
         COALESCE(SUM(mk.website_views), 0) + COALESCE(SUM(pk.part_website_views), 0) AS website_views,
         COALESCE(mk.website_event_count, 0) + COALESCE(SUM(pk.part_website_event_count), 0) AS website_engagments,
         COALESCE(mk.website_total_users, 0) + COALESCE(SUM(pk.part_website_total_users), 0) AS web_total_users,
+        to_char(mk.website_duration, 'HH24:MI:SS') AS website_average_duration,
+        -- YouTube watch time (media + parts)
+        COALESCE(mk.youtube_watch_time, 0) + COALESCE(SUM(pk.part_youtube_watch_time), 0) AS youtube_watch_time,
         -- TikTok
         COALESCE(mk.tiktok_views, 0) + COALESCE(SUM(pk.part_tiktok_views), 0) AS tiktok_views,
         COALESCE(mk.tiktok_engagements, 0) + COALESCE(mk.tiktok_views, 0) + COALESCE(SUM(COALESCE(pk.part_tiktok_engagements, 0) + COALESCE(pk.part_tiktok_views, 0)), 0) AS tiktok_engagments,

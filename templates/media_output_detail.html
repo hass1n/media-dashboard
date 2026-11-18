@@ -3,44 +3,44 @@
 {% block title %}{{ output }} Analysis - Dashboard{% endblock %}
 
 {% block breadcrumbs %}
-<a href="/">Dashboard</a> &raquo; <span class="text-white">Media Channel Analysis</span>
+<a href="/">Dashboard</a> &raquo; <span class="text-white">{{ kind_label or 'Media Channel' }} Analysis</span>
 {% endblock %}
 
-{% block page_title %}Media Channel: <span class="text-warning">{{ output }}</span>{% endblock %}
-{% block page_subtitle %}Authors, programs, categories, views, and engagements for this channel.{% endblock %}
+{% block page_title %}{{ kind_label or 'Media Channel' }}: <span class="text-warning">{{ output }}</span>{% endblock %}
+{% block page_subtitle %}Authors, programs, categories, views, and engagements for this {{ (kind_label or 'Media Channel')|lower }}.{% endblock %}
 
 {% block filter_method %}GET{% endblock %}
-{% block filter_action %}/output/{{ output }}{% endblock %}
+{% block filter_action %}{{ filter_action or ('/output/' ~ output) }}{% endblock %}
 
 {% block content %}
 {% if no_data %}
 <div class="alert alert-warning text-center">
     <h4 class="alert-heading">No Data Found</h4>
-    <p>No author records were found for media output: <strong>{{ output }}</strong> in the selected date range.</p>
+    <p>No author records were found for {{ (kind_label or 'media output')|lower }}: <strong>{{ output }}</strong> in the selected date range.</p>
     <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Home</a>
 </div>
 {% else %}
 <div class="row g-3">
     <div class="col-12 col-md-6">
-        <div class="chart-card p-1 d-flex flex-column">
+        <div data-chart-link="program" class="chart-card p-1 d-flex flex-column">
             {{ charts.programs | safe }}
         </div>
     </div>
 
     <div class="col-12 col-md-6">
-        <div class="chart-card p-1 d-flex flex-column">
+        <div data-chart-link="category" class="chart-card p-1 d-flex flex-column">
             {{ charts.categories | safe }}
         </div>
     </div>
 
     <div class="col-12 col-md-6">
-        <div class="chart-card p-1 d-flex flex-column">
+        <div data-chart-link="author" class="chart-card p-1 d-flex flex-column">
             {{ charts.authors | safe }}
         </div>
     </div>
 
     <div class="col-12 col-md-6">
-        <div class="chart-card p-1 d-flex flex-column">
+        <div data-chart-link="platform" class="chart-card p-1 d-flex flex-column">
             {{ charts.performance | safe }}
         </div>
     </div>

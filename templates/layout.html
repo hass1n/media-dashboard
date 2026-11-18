@@ -123,11 +123,11 @@
             <form method="{% block filter_method %}POST{% endblock %}" action="{% block filter_action %}/{% endblock %}" class="d-flex align-items-center gap-2 custom-top-filter-form">
                 <div class="d-flex align-items-center gap-1">
                     <label for="start_date" class="form-label-inline text-dark mb-0 small fw-bold">Start:</label>
-                    <input type="date" class="form-control form-control-sm custom-input" id="start_date" name="start_date" value="{{ start_date }}">
+                    <span class="date-field"><input type="date" class="form-control form-control-sm custom-input" id="start_date" name="start_date" value="{{ start_date }}" max="{{ today }}"><span class="date-display" aria-hidden="true"></span></span>
                 </div>
                 <div class="d-flex align-items-center gap-1">
                     <label for="end_date" class="form-label-inline text-dark mb-0 small fw-bold">End:</label>
-                    <input type="date" class="form-control form-control-sm custom-input" id="end_date" name="end_date" value="{{ end_date }}">
+                    <span class="date-field"><input type="date" class="form-control form-control-sm custom-input" id="end_date" name="end_date" value="{{ end_date }}" max="{{ today }}"><span class="date-display" aria-hidden="true"></span></span>
                 </div>
                 <button type="submit" class="btn btn-panel-submit btn-sm">Apply Filters</button>
             </form>
@@ -189,13 +189,52 @@
                 });
             });
 
+            // One request for every menu: only entries with data in the selected dates
+            let navOptionsPromise = null;
+            const getNavOptions = function () {
+                if (!navOptionsPromise) {
+                    navOptionsPromise = fetch(appendDateFilters('/api/nav-options'))
+                        .then(response => {
+                            if (!response.ok) throw new Error('nav options failed');
+                            return response.json();
+                        });
+                }
+                return navOptionsPromise;
+            };
+
+            // Social Platforms: hide platforms with no posts in the date range
+            getNavOptions().then(function (data) {
+                const platforms = new Set(data.platforms || []);
+                document.querySelectorAll('.dropdown-menu a[href^="/social/"]').forEach(function (link) {
+                    const platform = decodeURIComponent(link.pathname.split('/')[2] || '');
+                    link.closest('li').classList.toggle('d-none', !platforms.has(platform));
+                });
+            }).catch(function () {});
+
+            // Categories: hide categories (and whole groups) with no data in the date range
+            getNavOptions().then(function (data) {
+                const available = (data.categories || []).map(c => c.toLowerCase());
+                const hasData = name => {
+                    const n = name.trim().toLowerCase();
+                    return available.some(c => c.includes(n));
+                };
+                document.querySelectorAll('[data-category-link]').forEach(function (link) {
+                    const hide = !hasData(link.textContent);
+                    (link.closest('h2') || link).classList.toggle('d-none', hide);
+                });
+                document.querySelectorAll('.category-menu-group').forEach(function (group) {
+                    const anyVisible = Array.from(group.querySelectorAll('[data-category-link]'))
+                        .some(link => !(link.closest('h2') || link).classList.contains('d-none'));
+                    group.classList.toggle('d-none', !anyVisible);
+                });
+            }).catch(function () {});
+
             document.querySelectorAll('.nav-data-menu').forEach(function (menu) {
                 let loaded = false;
                 const loadMenu = function () {
                     if (loaded) return;
                     loaded = true;
-                    fetch(menu.dataset.endpoint)
-                        .then(response => response.json())
+                    getNavOptions()
                         .then(data => {
                             const values = data[menu.dataset.key] || [];
                             const overviewLink = menu.querySelector('li:last-child');
@@ -241,6 +280,47 @@
             window.location.href = `/social/${platform}?start_date=${startDate}&end_date=${endDate}`;
         }
     </script>
+    <script>
+        // Browser's own date picker, but the box shows the date as dd/mm/yyyy.
+        // The form still sends yyyy-mm-dd. Neither date can be after today,
+        // and Start can't be after End.
+        (function () {
+            const startEl = document.getElementById('start_date');
+            const endEl = document.getElementById('end_date');
+            if (!startEl || !endEl) return;
+            const today = endEl.max;
+
+            function showDmy(input) {
+                const display = input.parentElement.querySelector('.date-display');
+                const parts = (input.value || '').split('-');
+                display.textContent = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : 'dd/mm/yyyy';
+                display.classList.toggle('empty', parts.length !== 3);
+            }
+
+            function linkLimits() {
+                startEl.max = endEl.value || today;
+                endEl.min = startEl.value || '';
+            }
+
+            [startEl, endEl].forEach(function (input) {
+                showDmy(input);
+                input.addEventListener('change', function () { showDmy(input); linkLimits(); });
+                input.addEventListener('input', function () { showDmy(input); });
+                // Clicking anywhere in the box opens the calendar
+                input.addEventListener('click', function () {
+                    if (typeof input.showPicker === 'function') {
+                        try { input.showPicker(); } catch (e) { /* already open */ }
+                    }
+                });
+                // The hidden native text is in the computer's date order; use the calendar instead
+                input.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Tab' && e.key !== 'Enter' && e.key !== 'Escape') e.preventDefault();
+                });
+            });
+            linkLimits();
+        })();
+    </script>
+    <script src="{{ url_for('static', filename='js/chart-links.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 

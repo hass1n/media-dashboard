@@ -8,6 +8,7 @@ from plotly.subplots import make_subplots
 import json
 from PIL import Image, ImageDraw
 from urllib.parse import unquote
+from datetime import date
 
 # List of keywords that represent media output rather than specific programs
 # Used to filter out media names from the Programs list and charts
@@ -163,30 +164,41 @@ def get_image_as_data_uri(photo_filename):
         return None
 
 
-def add_author_images_to_bar_chart(fig, auth_counts, image_size_fraction=0.5):
+def add_author_images_to_bar_chart(fig, auth_counts, image_px=56, height=600):
+    """Put each author's round photo above their bar at a fixed on-screen size.
+
+    Photos are image_px pixels tall whatever the bar values are. When there are many
+    authors and the columns get narrower than that, 'contain' shrinks them to fit the
+    column, so they never overlap.
+    """
     if auth_counts.empty:
         return
 
+    margin = fig.layout.margin
+    top_px = margin.t if margin.t is not None else 60
+    bottom_px = margin.b if margin.b is not None else 60
+
+    # Rotated author names under the axis push the plot area up (automargin)
+    longest_name = auth_counts['author'].astype(str).str.len().max()
+    tick_label_px = min(150, longest_name * 5.5 * 0.75) + 25
+    plot_px = max(200, height - top_px - max(bottom_px, tick_label_px))
+
+    value_label_px = 18   # the count printed above each bar
+    gap_px = 4
+    headroom_px = value_label_px + gap_px + image_px + 8
+
+    max_value = float(auth_counts['interviews'].max() or 1)
+    y_top = max_value * plot_px / (plot_px - headroom_px)
+    units_per_px = y_top / plot_px
+
     images = []
-    max_value = auth_counts['interviews'].max() if not auth_counts.empty else 1
-
-    # Use a fixed y-axis range based on max_value so the chart height is predictable.
-    # Images are sized as a fixed fraction of the y-axis range — this means all photos
-    # appear the same visual size regardless of individual bar heights.
-    # This fixes the "damaged image" issue when one author dominates (e.g. 814 vs 82).
-    y_top    = max_value * 1.8    # total y-axis ceiling
-    img_size = y_top * image_size_fraction
-    gap      = y_top * 0.08       # fixed gap to leave room for the number text
-
     for _, row in auth_counts.iterrows():
         author_name = row['author']
         photo_filename = get_author_photo_circle_filename(author_name)
         if not photo_filename:
             continue
 
-        # Use a base64 data URI so Plotly.js can display the image without
-        # making a separate HTTP request (relative URLs are unreliable in
-        # embedded Plotly HTML on Windows / behind proxies).
+        # Base64 data URI so Plotly.js can show the image without a separate request
         image_source = get_image_as_data_uri(photo_filename)
         if not image_source:
             continue
@@ -195,29 +207,21 @@ def add_author_images_to_bar_chart(fig, auth_counts, image_size_fraction=0.5):
             'source': image_source,
             'x': author_name,
             'xref': 'x',
-            'y': float(row['interviews']) + gap,
+            'y': float(row['interviews']) + (value_label_px + gap_px) * units_per_px,
             'yref': 'y',
             'xanchor': 'center',
             'yanchor': 'bottom',
-            'sizex': 0.8,
-            'sizey': img_size,
+            'sizex': 0.9,                       # at most 90% of the column width
+            'sizey': image_px * units_per_px,   # fixed pixel height
             'sizing': 'contain',
             'layer': 'above'
         })
 
+    fig.update_layout(height=height, yaxis={'range': [0, y_top]})
+    fig.update_traces(textposition='outside', textfont={'size': 10}, marker_line_width=0,
+                      cliponaxis=False)
     if images:
-        fig.update_layout(
-            images=images,
-            height=600,
-            margin={'t': 120, 'b': 60},
-            yaxis={'range': [0, y_top]}
-        )
-        fig.update_traces(
-            textposition='outside',
-            textfont={'size': 10},
-            marker_line_width=0
-        )
-
+        fig.update_layout(images=images)
 
 
 def get_db_connection():
@@ -232,10 +236,39 @@ def intcomma_filter(value):
         return value
 
 
+DEFAULT_START_DATE = '2020-02-01'
+
+
+def today_iso():
+    return date.today().isoformat()
+
+
+@app.context_processor
+def inject_today():
+    """Lets templates cap date pickers at today (max="{{ today }}")."""
+    return {'today': today_iso()}
+
+
+@app.template_filter('dmy')
+def format_dmy(value):
+    """'2026-03-05' -> '05/03/2026' for display; anything else is returned unchanged."""
+    try:
+        return date.fromisoformat(str(value)[:10]).strftime('%d/%m/%Y')
+    except (TypeError, ValueError):
+        return value
+
+
 def resolve_filter_dates(request_obj):
-    """Return the active date range from form values first, then query params."""
-    start_date = request_obj.form.get('start_date') or request_obj.args.get('start_date') or '2020-02-01'
-    end_date = request_obj.form.get('end_date') or request_obj.args.get('end_date') or '2026-06-01'
+    """Return the active date range from form values first, then query params.
+
+    The end date defaults to today and is never later than today.
+    """
+    today = today_iso()
+    start_date = request_obj.form.get('start_date') or request_obj.args.get('start_date') or DEFAULT_START_DATE
+    end_date = request_obj.form.get('end_date') or request_obj.args.get('end_date') or today
+    # ISO dates (YYYY-MM-DD) compare correctly as strings
+    end_date = min(end_date, today)
+    start_date = min(start_date, end_date)
     return start_date, end_date
 
 
@@ -777,7 +810,7 @@ def build_performance_chart(df, title, group_by='programs', chart_height=500):
         legend={'orientation': 'h', 'y': 1.02, 'yanchor': 'bottom', 'x': 1, 'xanchor': 'right'}
     )
     fig.update_traces(textposition='outside', cliponaxis=False)
-    return pio.to_html(fig, full_html=False, include_plotlyjs='cdn', config={'responsive': True})
+    return pio.to_html(fig, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False})
 
 
 def build_home_dashboard_charts(df, start_date=None, end_date=None, include_engagement_charts=True, include_excluded_outputs=False):
@@ -937,20 +970,20 @@ def build_home_dashboard_charts(df, start_date=None, end_date=None, include_enga
                            xaxis={'tickfont': {'size': 10}, 'title': {'font': {'size': 11}}, 'gridcolor': 'rgba(0,0,0,0)', 'automargin': True},
                            yaxis={'tickfont': {'size': 10}, 'title': {'font': {'size': 11}}, 'gridcolor': '#f0f0f0', 'automargin': True})
     fig_auth.update_traces(textposition='outside', textfont={'size': 10}, marker_line_width=0)
-    add_author_images_to_bar_chart(fig_auth, auth_counts)
     fig_auth.update_layout(margin=dict(l=20, r=20, t=40, b=40))
+    add_author_images_to_bar_chart(fig_auth, auth_counts, height=600)
 
     charts = {
-        'programs': pio.to_html(fig_prog, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'outlets_preview': pio.to_html(fig_outlets_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'outlets_all': pio.to_html(fig_outlets_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'outputs': pio.to_html(fig_out, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'authors': pio.to_html(fig_auth, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
+        'programs': pio.to_html(fig_prog, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'outlets_preview': pio.to_html(fig_outlets_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'outlets_all': pio.to_html(fig_outlets_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'outputs': pio.to_html(fig_out, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'authors': pio.to_html(fig_auth, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
         'outlet_show_more': len(all_outlet_counts) > len(top_outlet_counts)
     }
     charts['performance'] = build_performance_chart(
         working_df,
-        f"Social Media and Website Views and Engagements ({start_date} to {end_date})"
+        f"Social Media and Website Views and Engagements ({format_dmy(start_date)} to {format_dmy(end_date)})"
     )
 
     platform_totals = {}
@@ -988,7 +1021,7 @@ def build_home_dashboard_charts(df, start_date=None, end_date=None, include_enga
         social_data = pd.DataFrame(combined_stats)
         social_colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728', '#9467bd']
         fig_social = px.bar(social_data, x='platform', y='engagements', color='platform',
-                            title=f"Total Engagements ({start_date} to {end_date})",
+                            title=f"Total Engagements ({format_dmy(start_date)} to {format_dmy(end_date)})",
                             labels={'platform': 'Social Platform', 'engagements': 'Total Engagements'},
                             text_auto='.2s',
                             color_discrete_sequence=px.colors.qualitative.Safe)
@@ -1001,7 +1034,7 @@ def build_home_dashboard_charts(df, start_date=None, end_date=None, include_enga
         fig_social.update_traces(width=0.3, textposition='outside', cliponaxis=False)
 
         fig_views = px.bar(social_data, x='platform', y='views', color='platform',
-                           title=f"Total Views ({start_date} to {end_date})",
+                           title=f"Total Views ({format_dmy(start_date)} to {format_dmy(end_date)})",
                            labels={'platform': 'Social Platform', 'views': 'Total Views'},
                            text_auto='.2s',
                            color_discrete_sequence=px.colors.qualitative.Dark24)
@@ -1022,7 +1055,7 @@ def build_home_dashboard_charts(df, start_date=None, end_date=None, include_enga
             {'Metric': 'Total Users', 'Value': web_users},
         ])
         fig_website = px.bar(website_perf, x='Metric', y='Value', color='Metric',
-                             title=f"Website Performance ({start_date} to {end_date})",
+                             title=f"Website Performance ({format_dmy(start_date)} to {format_dmy(end_date)})",
                              labels={'Value': 'Count', 'Metric': 'Metric'},
                              text_auto='.2s',
                              color_discrete_sequence=['#6610f2', '#e83e8c', '#20c997'])
@@ -1034,9 +1067,9 @@ def build_home_dashboard_charts(df, start_date=None, end_date=None, include_enga
         fig_website.update_traces(width=0.2, textposition='outside', cliponaxis=False)
 
         charts.update({
-            'social': pio.to_html(fig_social, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-            'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-            'website': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn', config={'responsive': True})
+            'social': pio.to_html(fig_social, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+            'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+            'website': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False})
         })
 
         platform_totals = {row['platform'].lower(): {'views': row['views'], 'engagements': row['engagements']} for row in combined_stats}
@@ -1144,7 +1177,7 @@ def outputs_list():
     )
 
     charts = {
-        'outlets_all': pio.to_html(fig_outlets_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True})
+        'outlets_all': pio.to_html(fig_outlets_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False})
     }
     outputs = all_outlet_counts.to_dict(orient='records')
     return render_template('outputs.html', charts=charts, outputs=outputs, no_data=False, start_date=start_date, end_date=end_date)
@@ -1166,7 +1199,7 @@ def media_channels_list():
     return jsonify({'channels': channels})
 
 
-@app.route('/program/<program_name>', methods=['GET'])
+@app.route('/program/<path:program_name>', methods=['GET'])
 def program_detail(program_name):
     """Display detailed analysis for a specific program"""
     # 1. Decode URL parameters & decode program_name (e.g., %20 to space)
@@ -1179,8 +1212,14 @@ def program_detail(program_name):
     if df is None or df.empty:
         return render_template('program_detail.html', program=decoded_program_name, charts={}, no_data=True, start_date=start_date, end_date=end_date)
     
-    # 3. Filter by program name
-    df = filter_comma_separated_exact(df, 'programs', decoded_program_name)
+    # 3. Filter by program name ("OTHER/UNKNOWN" = outputs with no program, as in the home chart)
+    if decoded_program_name.strip().upper() == 'OTHER/UNKNOWN':
+        no_program = df['programs'].fillna('').astype(str).str.split(',').map(
+            lambda parts: all(p.strip().lower() in {'', 'nan', 'none', 'unknown'} for p in parts)
+        )
+        df = df[no_program].copy()
+    else:
+        df = filter_comma_separated_exact(df, 'programs', decoded_program_name)
     
     if df.empty:
         return render_template('program_detail.html', program=decoded_program_name, charts={}, no_data=True, start_date=start_date, end_date=end_date)
@@ -1274,7 +1313,7 @@ def program_detail(program_name):
     # Chart 2: Total Presence per Author in this Program
     # -------------------------------------------------------------------------
     presence_mask = (
-        df['programs'].astype(str).str.contains(decoded_program_name, case=False, na=False) & 
+        df['programs'].astype(str).str.contains(decoded_program_name, case=False, na=False, regex=False) & 
         ~df['media_id'].astype(str).str.startswith(('p', 'sm'))
     )
     presence_df = df[presence_mask].copy()
@@ -1314,8 +1353,7 @@ def program_detail(program_name):
     fig_authors.update_traces(width=0.6, textfont={'size': 10})
     
     if 'add_author_images_to_bar_chart' in globals() and not auth_counts.empty:
-        add_author_images_to_bar_chart(fig_authors, auth_counts, image_size_fraction=0.25)
-    fig_authors.update_layout(height=430, margin=dict(l=20, r=20, t=70, b=95))
+        add_author_images_to_bar_chart(fig_authors, auth_counts, image_px=44, height=430)
 
     # -------------------------------------------------------------------------
     # Chart 3: Total Presence per Media Output in this Program
@@ -1369,11 +1407,11 @@ def program_detail(program_name):
     
     # Render all charts to HTML strings
     charts = {
-        'platforms': pio.to_html(fig_platforms, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'platform_posts': pio.to_html(fig_platform_posts, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'authors': pio.to_html(fig_authors, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'media': pio.to_html(fig_media, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'website_perf': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
+        'platforms': pio.to_html(fig_platforms, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'platform_posts': pio.to_html(fig_platform_posts, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'authors': pio.to_html(fig_authors, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'media': pio.to_html(fig_media, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'website_perf': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
         'performance': build_performance_chart(
             df,
             f"Social Media and Website Views and Engagements - {decoded_program_name}",
@@ -1398,12 +1436,23 @@ def output_detail(output_name):
     df = get_unified_media_df(start_date, end_date)
     df['media_source'] = df['media_source'].apply(standardize_media_name)
     target_output = standardize_media_name(output_name)
-    df = df[df['media_source'] == target_output].copy()
+    if target_output == 'OTHER/UNKNOWN':
+        # Home chart groups outputs with no channel under "OTHER/UNKNOWN"
+        sources = df['media_source'].fillna('').astype(str).str.strip().str.upper()
+        df = df[sources.isin(['', 'OTHER/UNKNOWN'])].copy()
+    else:
+        df = df[df['media_source'] == target_output].copy()
+    return render_breakdown_page(df, target_output, 'Media Channel', f'/output/{target_output}',
+                                 start_date, end_date)
 
+
+def render_breakdown_page(df, target_output, kind_label, filter_action, start_date, end_date):
+    """Render authors/programs/categories/performance charts for an already-filtered df."""
+    page_vars = dict(output=target_output, kind_label=kind_label, filter_action=filter_action,
+                     start_date=start_date, end_date=end_date)
     if df.empty:
-        return render_template('media_output_detail.html', output=target_output, charts={}, no_data=True, start_date=start_date, end_date=end_date)
+        return render_template('media_output_detail.html', charts={}, no_data=True, **page_vars)
 
-    df['weight'] = 1
     df['weight'] = 1
     auth_df = df[~df['media_id'].astype(str).str.startswith(('p', 'sm'))].copy()
     auth_df = auth_df[auth_df['author'].notna() & (auth_df['author'].astype(str).str.strip() != '')].copy()
@@ -1424,7 +1473,7 @@ def output_detail(output_name):
     author_chart_counts = auth_counts.head(15)
     fig_auth = px.bar(author_chart_counts, x='interviews', y='author', color='interviews',
                       orientation='h',
-                      title=f"Top {len(author_chart_counts)} Authors for Media Channel: {target_output}",
+                      title=f"Top {len(author_chart_counts)} Authors for {kind_label}: {target_output}",
                       labels={'author': 'Author', 'interviews': 'Total Interviews'},
                       text_auto=True,
                       color_continuous_scale='Greens')
@@ -1466,23 +1515,21 @@ def output_detail(output_name):
     )
 
     charts = {
-        'authors': pio.to_html(fig_auth, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'programs': pio.to_html(fig_programs, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'categories': pio.to_html(fig_categories, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
+        'authors': pio.to_html(fig_auth, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'programs': pio.to_html(fig_programs, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'categories': pio.to_html(fig_categories, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
         'performance': build_performance_chart(
             df, f"Views and Engagements - {target_output}", chart_height=430
         )
     }
     authors_list = auth_counts.to_dict(orient='records')
 
-    return render_template('media_output_detail.html', output=target_output, charts=charts,
-                           no_data=False, start_date=start_date, end_date=end_date,
-                           authors=authors_list)
+    return render_template('media_output_detail.html', charts=charts, no_data=False,
+                           authors=authors_list, **page_vars)
 
 @app.route('/api/output_authors/<path:output_name>', methods=['GET'])
 def api_output_authors(output_name):
-    start_date = request.args.get('start_date', '2020-02-01')
-    end_date = request.args.get('end_date', '2026-06-01')
+    start_date, end_date = resolve_filter_dates(request)
 
     df = get_unified_media_df(start_date, end_date)
     df['media_source'] = df['media_source'].apply(standardize_media_name)
@@ -1545,7 +1592,8 @@ def category_detail(category_name):
         return render_template('category_detail.html', category=decoded_category_name, charts={}, no_data=True, start_date=start_date, end_date=end_date)
     
     # Filter by category name
-    df = df[df['categories'].astype(str).str.contains(decoded_category_name, case=False, na=False)].copy()
+    # regex=False: category names can contain brackets, e.g. "(Capital controls)"
+    df = df[df['categories'].astype(str).str.contains(decoded_category_name, case=False, na=False, regex=False)].copy()
     
     if df.empty:
         return render_template('category_detail.html', category=decoded_category_name, charts={}, no_data=True, start_date=start_date, end_date=end_date)
@@ -1592,7 +1640,7 @@ def category_detail(category_name):
 
     # Base dataset for Author and Media counts (excluding 'p' and 'sm')
     valid_base = df[
-        df['categories'].astype(str).str.contains(decoded_category_name, case=False, na=False) & 
+        df['categories'].astype(str).str.contains(decoded_category_name, case=False, na=False, regex=False) & 
         ~df['media_id'].astype(str).str.startswith(('p', 'sm'))
     ].copy()
 
@@ -1685,10 +1733,10 @@ def category_detail(category_name):
     fig_website.update_traces(width=0.2, textposition='outside', cliponaxis=False)
     
     charts = {
-        'platforms': pio.to_html(fig_platforms, full_html=False, include_plotlyjs='cdn'),
-        'authors': pio.to_html(fig_authors, full_html=False, include_plotlyjs='cdn'),
-        'media': pio.to_html(fig_media, full_html=False, include_plotlyjs='cdn'),
-        'website_perf': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn'),
+        'platforms': pio.to_html(fig_platforms, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'authors': pio.to_html(fig_authors, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'media': pio.to_html(fig_media, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'website_perf': pio.to_html(fig_website, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
         'performance': build_performance_chart(df, f"Social Media and Website Views and Engagements - {decoded_category_name}")
     }
     
@@ -1799,16 +1847,67 @@ def author_detail(author_name):
     fig_categories_all = build_category_chart(category_counts)
 
     charts = {
-        'programs': pio.to_html(fig_prog, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'media_preview': pio.to_html(fig_media_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'media_all': pio.to_html(fig_media_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'outputs': pio.to_html(fig_out, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'categories_preview': pio.to_html(fig_categories_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
-        'categories_all': pio.to_html(fig_categories_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True}),
+        'programs': pio.to_html(fig_prog, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'media_preview': pio.to_html(fig_media_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'media_all': pio.to_html(fig_media_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'outputs': pio.to_html(fig_out, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'categories_preview': pio.to_html(fig_categories_preview, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
+        'categories_all': pio.to_html(fig_categories_all, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}),
         'performance': build_performance_chart(df, f"Social Media and Website Views and Engagements - {author_name}")
     }
 
     return render_template('author_detail.html', author=author_name, charts=charts, no_data=False, start_date=start_date, end_date=end_date, author_photo=author_photo, media_show_more=media_show_more, category_show_more=category_show_more)
+
+def _split_csv_values(series):
+    """All distinct comma-separated values in a column, stripped, ignoring blanks."""
+    values = set()
+    for cell in series.dropna():
+        for part in str(cell).split(','):
+            part = part.strip()
+            if part and part.lower() not in {'nan', 'none'}:
+                values.add(part)
+    return values
+
+
+@app.route('/api/nav-options')
+def nav_options():
+    """Menu entries that actually have data in the selected date range.
+
+    Uses the same data and matching as the detail pages, so every menu entry
+    opens a page with data.
+    """
+    start_date, end_date = resolve_filter_dates(request)
+    df = get_unified_media_df(start_date, end_date)
+
+    programs = sorted({p.upper() for p in _split_csv_values(df['programs'])} - set(MEDIA_KEYWORDS))
+    authors = sorted(_split_csv_values(df['author']), key=str.casefold)
+    categories = sorted(_split_csv_values(df['categories']))
+    channels = sorted({
+        standardize_media_name(name) for name in df['media_source'].dropna() if str(name).strip()
+    } - {'OTHER/UNKNOWN', ''})
+
+    platform_columns = {
+        'Facebook': ('facebook_link', 'facebook_views'),
+        'YouTube': ('youtube_link', 'youtube_views'),
+        'Instagram': ('instagram_link', 'insta_views'),
+        'Twitter': ('twitter_link', 'twitter_views'),
+        'TikTok': ('tiktok_link', 'tiktok_views'),
+    }
+    platforms = []
+    for platform, (link_col, views_col) in platform_columns.items():
+        has_link = df[link_col].fillna('').astype(str).str.strip().ne('')
+        has_views = pd.to_numeric(df[views_col], errors='coerce').fillna(0) > 0
+        if (has_link | has_views).any():
+            platforms.append(platform)
+
+    return jsonify({
+        'programs': programs,
+        'authors': authors,
+        'categories': categories,
+        'channels': channels,
+        'platforms': platforms,
+    })
+
 
 @app.route('/programs')
 def programs_list():
@@ -1857,81 +1956,18 @@ def categories_list():
 
 @app.route('/output-type/<path:output_type>')
 def output_type_details(output_type):
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    """Authors, programs, categories and performance for one output type (e.g. TV Interview)."""
+    start_date, end_date = resolve_filter_dates(request)
+    target = unquote(output_type).strip()
 
-    # Query 1: Authors who interviewed under this Output Type
-    authors_query = """
-        SELECT author, COUNT(*) as interview_count
-        FROM media_kpis
-        WHERE output_type = %s
-          AND (%s::date IS NULL OR date >= %s::date)
-          AND (%s::date IS NULL OR date <= %s::date)
-        GROUP BY author
-        ORDER BY interview_count DESC
-    """
-    
-    # Query 2: Programs broadcasted under this Output Type
-    programs_query = """
-        SELECT program, COUNT(*) as program_count
-        FROM media_kpis
-        WHERE output_type = %s
-          AND (%s::date IS NULL OR date >= %s::date)
-          AND (%s::date IS NULL OR date <= %s::date)
-        GROUP BY program
-        ORDER BY program_count DESC
-    """
+    df = get_unified_media_df(start_date, end_date)
+    df = df[~df['media_id'].astype(str).str.startswith(('p', 'sm'))].copy()
+    # Same rule as the home "media type" chart: first listed type, empty -> Other/Unknown
+    first_type = df['output'].fillna('').astype(str).map(lambda x: x.split(',')[0].strip() or 'Other/Unknown')
+    df = df[first_type.str.casefold() == target.casefold()].copy()
 
-    authors = db.execute(authors_query, (output_type, start_date, start_date, end_date, end_date)).fetchall()
-    programs = db.execute(programs_query, (output_type, start_date, start_date, end_date, end_date)).fetchall()
-
-    return render_template('output_type_details.html', 
-                           output_type=output_type, 
-                           authors=authors, 
-                           programs=programs)
-
-@app.route('/media-authors/<path:media_name>')
-def media_authors(media_name):
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-
-    # Query authors for this specific media output
-    # (Adjust table/column names to match your schema, e.g., media_kpis or media_output)
-    query = """
-        SELECT author, COUNT(*) as total_interviews 
-        FROM media_kpis 
-        WHERE media_output = %s
-    """
-    params = [media_name]
-
-    if start_date and end_date:
-        query += " AND date BETWEEN %s AND %s"
-        params.extend([start_date, end_date])
-
-    query += " GROUP BY author ORDER BY total_interviews DESC"
-
-    # Fetch records and pass to template
-    authors = db.execute(query, params).fetchall()
-
-    return render_template('media_authors.html', media_name=media_name, authors=authors)
-
-@app.route('/output/<path:media_name>')
-def media_output_page(media_name):
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    
-    # Query database to get unique authors for this media platform
-    authors = db.execute("""
-        SELECT author, COUNT(*) as interview_count
-        FROM media_kpis
-        WHERE media_output = %s
-          AND (%s::date IS NULL OR date >= %s::date)
-          AND (%s::date IS NULL OR date <= %s::date)
-        GROUP BY author
-        ORDER BY interview_count DESC
-    """, (media_name, start_date, start_date, end_date, end_date)).fetchall()
-
-    return render_template('output_details.html', media_name=media_name, authors=authors)
+    return render_breakdown_page(df, target, 'Output Type', f'/output-type/{target}',
+                                 start_date, end_date)
 
 @app.route('/authors')
 def authors_list():
@@ -2054,10 +2090,10 @@ def media_analytics():
     fig_eng.update_traces(width=0.6)
 
     charts = {
-        'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn'),
-        'duration': pio.to_html(fig_duration, full_html=False, include_plotlyjs='cdn'),
-        'users': pio.to_html(fig_users, full_html=False, include_plotlyjs='cdn'),
-        'engagements': pio.to_html(fig_eng, full_html=False, include_plotlyjs='cdn')
+        'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'duration': pio.to_html(fig_duration, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'users': pio.to_html(fig_users, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'engagements': pio.to_html(fig_eng, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     }
     website_summary = pd.DataFrame([
         {'Metric': 'Website Views', 'Value': total_views},
@@ -2073,7 +2109,7 @@ def media_analytics():
     )
     fig_website_summary.update_layout(showlegend=False, height=560, bargap=0.25, margin=dict(l=25, r=25, t=60, b=80))
     fig_website_summary.update_traces(textposition='outside', cliponaxis=False)
-    charts['summary'] = pio.to_html(fig_website_summary, full_html=False, include_plotlyjs='cdn')
+    charts['summary'] = pio.to_html(fig_website_summary, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
 
     return render_template('media.html', charts=charts, start_date=start_date, end_date=end_date, no_data=False)
 
@@ -2210,9 +2246,9 @@ def social_analytics(platform):
     fig_comments.update_traces(width=0.2)
 
     charts = {
-        'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn'),
-        'likes': pio.to_html(fig_likes, full_html=False, include_plotlyjs='cdn'),
-        'comments': pio.to_html(fig_comments, full_html=False, include_plotlyjs='cdn')
+        'views': pio.to_html(fig_views, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'likes': pio.to_html(fig_likes, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False}),
+        'comments': pio.to_html(fig_comments, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     }
 
     engagement_col = metrics['comments'] or metrics['likes']
@@ -2286,7 +2322,7 @@ def social_analytics(platform):
             title_font={'size': 10}
         )
         charts[field] = pio.to_html(
-            fig_breakdown, full_html=False, include_plotlyjs='cdn', config={'responsive': True}
+            fig_breakdown, full_html=False, include_plotlyjs='cdn', config={'responsive': True, 'displayModeBar': False}
         )
 
     social_summary = pd.DataFrame([
@@ -2302,7 +2338,7 @@ def social_analytics(platform):
     )
     fig_social_summary.update_layout(showlegend=False, height=560, bargap=0.25, margin=dict(l=25, r=25, t=60, b=80))
     fig_social_summary.update_traces(textposition='outside', cliponaxis=False)
-    charts['summary'] = pio.to_html(fig_social_summary, full_html=False, include_plotlyjs='cdn')
+    charts['summary'] = pio.to_html(fig_social_summary, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
 
     return render_template('social_detail.html', platform=platform, charts=charts, start_date=start_date, end_date=end_date, no_data=False)
 
@@ -2380,8 +2416,7 @@ def data_preview():
     table_html = df.to_html(classes="table table-hover table-striped table-sm", index=False, border=0)
     
     # Get date range from query parameters (if any) or use defaults
-    start_date = request.args.get('start_date', '2020-02-01')
-    end_date = request.args.get('end_date', '2026-06-01')
+    start_date, end_date = resolve_filter_dates(request)
     
     return render_template('preview.html', table_html=table_html, start_date=start_date, end_date=end_date)
 

@@ -32,21 +32,21 @@
 <div class="row g-3 author-charts">
     <!-- Programs Chart -->
     <div class="col-12 col-xl-6">
-        <div class="chart-card p-1 h-100 d-flex flex-column">
+        <div data-chart-link="program" class="chart-card p-1 h-100 d-flex flex-column">
             {{ charts.programs | safe }}
         </div>
     </div>
 
     <!-- Combined reach, engagement, and website metrics -->
     <div class="col-12 col-xl-6">
-        <div class="chart-card p-1 h-100 d-flex flex-column">
+        <div data-chart-link="platform" class="chart-card p-1 h-100 d-flex flex-column">
             {{ charts.performance | safe }}
         </div>
     </div>
 
     <!-- Media Outputs Chart -->
     <div class="col-12 col-xl-6">
-        <div class="chart-card p-1 h-100 d-flex flex-column">
+        <div data-chart-link="output" class="chart-card p-1 h-100 d-flex flex-column">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <div><small class="fw-bold">Media Outputs</small></div>
                 {% if media_show_more %}
@@ -66,14 +66,14 @@
 
     <!-- Output Types Chart -->
     <div class="col-12 col-xl-6">
-        <div class="chart-card p-1 h-100 d-flex flex-column">
+        <div data-chart-link="output-type" class="chart-card p-1 h-100 d-flex flex-column">
             {{ charts.outputs | safe }}
         </div>
     </div>
 
     <!-- Category Presence -->
     <div class="col-12">
-        <div class="chart-card p-1 h-100 d-flex flex-column">
+        <div data-chart-link="category" class="chart-card p-1 h-100 d-flex flex-column">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <div><small class="fw-bold">Categories</small></div>
                 {% if category_show_more %}

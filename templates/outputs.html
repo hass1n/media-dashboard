@@ -16,13 +16,13 @@
 {% if no_data %}
 <div class="alert alert-warning text-center">
     <h4 class="alert-heading">No Output Data</h4>
-    <p>No media output records were found for the selected date range: <strong>{{ start_date }}</strong> to <strong>{{ end_date }}</strong>.</p>
+    <p>No media output records were found for the selected date range: <strong>{{ start_date|dmy }}</strong> to <strong>{{ end_date|dmy }}</strong>.</p>
     <a href="/{{ '?' ~ ('start_date=' ~ start_date ~ '&end_date=' ~ end_date) if start_date and end_date else '' }}" class="btn btn-dark btn-sm mt-2">Back to Dashboard</a>
 </div>
 {% else %}
 <div class="row">
     <div class="col-12 mb-4">
-        <div class="chart-card">
+        <div data-chart-link="output" class="chart-card">
             {{ charts.outlets_all | safe }}
         </div>
     </div>
